@@ -73,7 +73,6 @@ RUN cp -r /tmp/install/Python313/include/ /tmp/install/python-3.13.7-embed-amd64
 RUN cp -r /tmp/install/Python313/libs/ /tmp/install/python-3.13.7-embed-amd64/libs
 
 
-
 WORKDIR /tmp/install/python-3.13.7-embed-amd64
 #（もし DLL が python313.dll の場合、python3.dll としてコピー）
 #RUN cp python3.dll python3.dll
@@ -217,26 +216,26 @@ RUN mkdir -p /tmp/dist/licenses/zlib && cp "/tmp/src/gdb-${GDB_VERSION}/zlib/REA
 RUN mkdir -p /tmp/dist/licenses/Python && cp "/tmp/install/Python313/LICENSE.txt" /tmp/dist/licenses/Python/
 
 # GDB がインストール時に作る data dir の Python モジュールをコピー
-RUN mkdir -p /tmp/dist/share/gdb/python
-RUN cp -r /tmp/install/gdb/share/gdb/python/* /tmp/dist/share/gdb/python/
+RUN mkdir -p /tmp/dist/python/ && cp -r /tmp/install/gdb/share/gdb/python/* /tmp/dist/python/
 
 # copy python
 RUN cp -r "/tmp/install/python-3.13.7-embed-amd64/." /tmp/dist/
 
-WORKDIR /
-USER root
-
-# cleanup artifact
-RUN ls -al "/tmp/dist/include"
-RUN rm -rf "/tmp/dist/include"
-RUN rm -rf "/tmp/dist/lib/libs"
-RUN rm -f "/tmp/dist/lib/python313.a"
+RUN cat <<'EOF' > /tmp/dist/python313._pth
+python313.zip
+.
+./lib
+# Uncomment to run site.main() automatically
+import site
+EOF
 
 
 # ghidragdb Python モジュールを site-packages 配下にコピー
-RUN mkdir -p /tmp/dist/Lib/site-packages/ghidragdb
-RUN curl -fSL https://raw.githubusercontent.com/Comsecuris/gdbghidra/refs/heads/master/data/gdb_ghidra_bridge_client.py \
-    -o /tmp/dist/Lib/site-packages/ghidragdb/gdb_ghidra_bridge_client.py
+RUN mkdir -p /tmp/dist/lib/ghidragdb && \
+    curl -fSL https://raw.githubusercontent.com/Comsecuris/gdbghidra/refs/heads/master/data/gdb_ghidra_bridge_client.py \
+        -o /tmp/dist/lib/ghidragdb/gdb_ghidra_bridge_client.py && \
+    sed -i '/from threading import Thread/a import gdb' /tmp/dist/lib/ghidragdb/gdb_ghidra_bridge_client.py
+
 # # Create a README file
 RUN echo 'This directory contains a distribution of the following software:' > /tmp/dist/README.txt && \
     echo '- GNU Project Debugger (GDB) for Windows (statically linked)' >> /tmp/dist/README.txt && \
@@ -260,10 +259,66 @@ RUN echo 'This directory contains a distribution of the following software:' > /
 
 WORKDIR /tmp
 
-RUN ls -al /tmp/dist/
+
+RUN cat > /tmp/dist/run_gdb.bat <<'EOF'
+@echo off
+SETLOCAL
+chcp 65001 >nul
+
+rem fix ASCII issue
+set TERM=dumb 
+set LC_ALL=C
+
+REM UTF-8環境変数を設定
+set PYTHONUTF8=1
+rem set PYTHONIOENCODING=utf-8:surrogateescape
+
+REM 現在のディレクトリを取得（バッチファイルのディレクトリ）
+set BASE=%~dp0
+
+REM デバッグ情報を表示
+echo Base directory: %BASE%
+
+REM Set Python home and path
+set PYTHONHOME=%BASE%
+set PYTHONPATH=%BASE%
+
+REM DLL があるディレクトリを PATH に追加
+set PATH=%BASE%;%PATH%
+
+REM Optionally set GDB data directory
+set GDB_DATA_DIR=%BASE%
+
+if exist "%BASE%gdb-multiarch.exe" (
+    echo   gdb-multiarch.exe: EXISTS
+) else (
+    echo   gdb-multiarch.exe: NOT FOUND
+    pause
+    exit 1
+)
+
+REM 末尾が \ なら削除する
+if "%GDB_DATA_DIR:~-1%"=="\" set GDB_DATA_DIR=%GDB_DATA_DIR:~0,-1%
+
+REM 末尾が / なら削除する
+if "%GDB_DATA_DIR:~-1%"=="/" set GDB_DATA_DIR=%GDB_DATA_DIR:~0,-1%
+
+echo.
+echo PYTHONPATH: %PYTHONPATH%
+echo.
+
+"%BASE%gdb-multiarch.exe" --data-directory=%GDB_DATA_DIR% -ex "python import ghidragdb.gdb_ghidra_bridge_client as ggb" %*
+EOF
+
+# "
 
 # Create a ZIP archive of the files for distribution
-RUN mv /tmp/dist "/tmp/gdb-${GDB_VERSION}-ghidra" && \
+# cleanup artifact - より確実な削除
+RUN rm -rf "/tmp/dist/include" && \
+    rm -rf "/tmp/dist/libs" && \
+    find /tmp/dist -name "*.a" -type f -delete && \
+    find /tmp/dist -name "*.lib" -type f -delete && \
+    mv /tmp/dist "/tmp/gdb-${GDB_VERSION}-ghidra" && \
     cd /tmp && \
     zip -r "/tmp/gdb-ghidra.zip" "gdb-${GDB_VERSION}-ghidra"
 
