@@ -51,7 +51,6 @@ RUN echo
 RUN mkdir -p /tmp/src/
 
 RUN curl -fSL "https://github.com/pmmp/DependencyMirror/releases/download/mirror/gmp-6.3.0.tar.xz" -o "/tmp/gmp-${GMP_VERSION}.tar.xz" && \
-
 tar xvf "/tmp/gmp-${GMP_VERSION}.tar.xz" --directory /tmp/src && rm -f "/tmp/gmp-${GMP_VERSION}.tar.xz"
 # Download and extract the source code for GDB
 RUN curl -fSL "https://sourceware.org/pub/gdb/releases/gdb-${GDB_VERSION}.tar.gz" -o "/tmp/gdb-${GDB_VERSION}.tar.gz" && \
@@ -72,6 +71,27 @@ RUN unzip python-3.13.7-embed-amd64.zip -d /tmp/install/python-3.13.7-embed-amd6
 RUN cp -r /tmp/install/Python313/include/ /tmp/install/python-3.13.7-embed-amd64/include
 RUN cp -r /tmp/install/Python313/libs/ /tmp/install/python-3.13.7-embed-amd64/libs
 
+WORKDIR /tmp
+
+# expat
+RUN curl -L -o expat-win64bin-2.7.1.zip https://github.com/libexpat/libexpat/releases/download/R_2_7_1/expat-win64bin-2.7.1.zip
+RUN unzip expat-win64bin-2.7.1.zip -d /tmp/install/expat
+
+# 解凍先作成
+RUN mkdir -p extracted
+
+WORKDIR /tmp/install/expat/Bin/
+
+# 1) DEF ファイル作成
+RUN gendef libexpat.dll -o libexpat.def
+
+# 2) インポートライブラリ作成
+RUN x86_64-w64-mingw32-dlltool \
+        --def libexpat.def \
+        --dllname libexpat.dll \
+        --output-lib libexpat.a
+
+# python
 
 WORKDIR /tmp/install/python-3.13.7-embed-amd64
 #（もし DLL が python313.dll の場合、python3.dll としてコピー）
@@ -156,8 +176,9 @@ RUN mkdir -p /tmp/build/mpc && cd /tmp/build/mpc && \
 
 
 ENV PKG_CONFIG_PATH="/tmp/install/gmp/lib/pkgconfig:/tmp/install/mpfr/lib/pkgconfig:/tmp/install/mpc/lib/pkgconfig"
-ENV CPPFLAGS="-I/tmp/install/gmp/include -I/tmp/install/mpfr/include -I/tmp/install/mpc/include"
-ENV LDFLAGS="-L/tmp/install/gmp/lib -L/tmp/install/mpfr/lib -L/tmp/install/mpc/lib -static-libgcc -static-libstdc++. -Wl,--gc-sections -Wl,--allow-multiple-definition"
+ENV CPPFLAGS="-I/tmp/install/gmp/include -I/tmp/install/mpfr/include -I/tmp/install/mpc/include -I/tmp/install/expat/Source/lib -L/tmp/install/expat/Bin"
+ENV LDFLAGS="-L/tmp/install/gmp/lib -L/tmp/install/mpfr/lib -L/tmp/install/mpc/lib -L/tmp/install/mpc/lib -L/tmp/install/expat/Bin -static-libgcc -static-libstdc++. -Wl,--gc-sections -Wl,--allow-multiple-definition"
+ENV LIBS="-L/tmp/install/expat/Bin"
 
 # 2) configure & build gdb with relaxed libtool checks and without -no-undefined
 RUN mkdir -p /tmp/build/gdb && cd /tmp/build/gdb && \
@@ -168,6 +189,9 @@ RUN mkdir -p /tmp/build/gdb && cd /tmp/build/gdb && \
         --host=x86_64-w64-mingw32 \
         --target=x86_64-w64-mingw32 \
         --enable-targets=all \
+        --with-expat \
+        --with-libexpat-prefix=/tmp/install/expat/Bin/ \
+        --with-libexpat-type=auto \
         --with-gmp=/tmp/install/gmp \
         --with-mpfr=/tmp/install/mpfr \
         --with-mpc=/tmp/install/mpc \
@@ -197,6 +221,54 @@ RUN mkdir -p /tmp/dist/licenses/gcc && \
     curl -fSL 'https://raw.githubusercontent.com/gcc-mirror/gcc/master/COPYING3' -o /tmp/dist/licenses/gcc/COPYING3 && \
     curl -fSL 'https://raw.githubusercontent.com/gcc-mirror/gcc/master/COPYING.RUNTIME' -o /tmp/dist/licenses/gcc/COPYING.RUNTIME
 
+
+# ghidragdb 114
+RUN curl -fSL "https://files.pythonhosted.org/packages/92/cf/5aa8682c6ca96011c576b3a536a1191a085e1b9f834f9757aecb2f948be5/ghidragdb-11.4-py3-none-any.whl" -o /tmp/ghidragdb114.whl
+RUN mkdir -p /tmp/install/ghidragdb-114
+RUN unzip -q /tmp/ghidragdb114.whl -d /tmp/install/ghidragdb-114
+RUN mkdir -p /tmp/dist/lib/ghidragdb
+RUN cp -r /tmp/install/ghidragdb-114/ghidragdb/* /tmp/dist/lib/ghidragdb
+#RUN rm -f /tmp/ghidragdb.whl
+
+
+# ghidragdb 113
+RUN curl -fSL "https://files.pythonhosted.org/packages/1a/b5/da2db7d979390079145edd2d1a60bdf7e8f4ae61ae8905abbac8f8b3cf69/ghidragdb-11.3-py3-none-any.whl" -o /tmp/ghidragdb113.whl
+RUN mkdir -p /tmp/install/ghidragdb-113
+RUN unzip -q /tmp/ghidragdb113.whl -d /tmp/install/ghidragdb-113
+#RUN rm -f /tmp/ghidragdb.whl
+
+# ghidratrace
+# ghidratrace 11.4 (first version)
+RUN curl -fSL "https://files.pythonhosted.org/packages/38/a7/5d66acce351d83fdacda84564d11f700fef20781c50a898e05b2c6b56e40/ghidratrace-11.4-py3-none-any.whl" -o /tmp/ghidratrace-11.4.whl
+RUN mkdir -p /tmp/install/ghidratrace-11.4
+RUN unzip -q /tmp/ghidratrace-11.4.whl -d /tmp/install/ghidratrace-11.4
+RUN mkdir -p /tmp/dist/lib/ghidratrace
+RUN cp -r /tmp/install/ghidratrace-11.4/ghidratrace/* /tmp/dist/lib/ghidratrace
+
+# ghidratrace 11.3 (second version) - download but don't install yet
+RUN curl -fSL "https://files.pythonhosted.org/packages/7f/e0/f6968d8ad4be9742b2fb310696b454971edbd9648b7466ac1a4fbf176668/ghidratrace-11.3-py3-none-any.whl" -o /tmp/ghidratrace-11.3.whl
+RUN mkdir -p /tmp/install/ghidratrace-11.3
+RUN unzip -q /tmp/ghidratrace-11.3.whl -d /tmp/install/ghidratrace-11.3
+
+# protobuf
+WORKDIR /tmp/install/
+RUN curl -L -o protobuf.whl \
+    https://files.pythonhosted.org/packages/8d/14/619e24a4c70df2901e1f4dbc50a6291eb63a759172558df326347dce1f0d/protobuf-3.20.3-py2.py3-none-any.whl
+RUN unzip protobuf.whl -d protobuf
+RUN mkdir -p /tmp/dist/lib
+RUN cp -r protobuf/google /tmp/dist/lib/google
+
+# psutil
+WORKDIR /tmp/install/
+RUN curl -L -o psutil.whl \
+    https://files.pythonhosted.org/packages/50/1b/6921afe68c74868b4c9fa424dad3be35b095e16687989ebbb50ce4fceb7c/psutil-7.0.0-cp37-abi3-win_amd64.whl
+RUN unzip psutil.whl -d psutil
+RUN mkdir -p /tmp/dist/lib/psutil
+RUN cp -r ./psutil/psutil/* /tmp/dist/lib/psutil
+RUN cp /tmp/dist/lib/psutil/_psutil_windows.pyd /tmp/dist/_psutil_windows.pyd
+
+WORKDIR /
+
 # # Copy the GDB executable and strip debug symbols
 #RUN mkdir /tmp/dist
 RUN cp /tmp/install/gdb/bin/gdb.exe /tmp/dist/gdb-multiarch.exe
@@ -214,9 +286,17 @@ RUN mkdir -p /tmp/dist/licenses/bfd && cp "/tmp/src/gdb-${GDB_VERSION}/bfd/COPYI
 RUN mkdir -p /tmp/dist/licenses/libiberty && cp "/tmp/src/gdb-${GDB_VERSION}/libiberty/COPYING.LIB" /tmp/dist/licenses/libiberty/
 RUN mkdir -p /tmp/dist/licenses/zlib && cp "/tmp/src/gdb-${GDB_VERSION}/zlib/README" /tmp/dist/licenses/zlib/
 RUN mkdir -p /tmp/dist/licenses/Python && cp "/tmp/install/Python313/LICENSE.txt" /tmp/dist/licenses/Python/
+RUN mkdir -p /tmp/dist/licenses/libexpat && cp "/tmp/install/expat/COPYING.txt" /tmp/dist/licenses/libexpat/
+RUN mkdir -p /tmp/dist/licenses/ghidragdb114 && cp "/tmp/install/ghidragdb-114/ghidragdb-11.4.dist-info/LICENSE" /tmp/dist/licenses/ghidragdb114/
+RUN mkdir -p /tmp/dist/licenses/ghidragdb113 && cp "/tmp/install/ghidragdb-113/ghidragdb-11.3.dist-info/LICENSE" /tmp/dist/licenses/ghidragdb113/
+RUN mkdir -p /tmp/dist/licenses/ghidratrace114 && cp "/tmp/install/ghidratrace-11.4/ghidratrace-11.4.dist-info/LICENSE" /tmp/dist/licenses/ghidratrace114/
+RUN mkdir -p /tmp/dist/licenses/ghidratrace113 && cp "/tmp/install/ghidratrace-11.3/ghidratrace-11.3.dist-info/LICENSE"  /tmp/dist/licenses/ghidratrace113/
+RUN mkdir -p /tmp/dist/licenses/protobuf && cp "/tmp/install/protobuf/protobuf-3.20.3.dist-info/LICENSE" /tmp/dist/licenses/protobuf/
+RUN mkdir -p /tmp/dist/licenses/psutil && cp "/tmp/install/psutil/psutil-7.0.0.dist-info/LICENSE" /tmp/dist/licenses/psutil/
 
 # GDB がインストール時に作る data dir の Python モジュールをコピー
 RUN mkdir -p /tmp/dist/python/ && cp -r /tmp/install/gdb/share/gdb/python/* /tmp/dist/python/
+RUN cp -r  /tmp/install/expat/Bin/libexpat.dll /tmp/dist/
 
 # copy python
 RUN cp -r "/tmp/install/python-3.13.7-embed-amd64/." /tmp/dist/
@@ -231,10 +311,6 @@ EOF
 
 
 # ghidragdb Python モジュールを site-packages 配下にコピー
-RUN mkdir -p /tmp/dist/lib/ghidragdb && \
-    curl -fSL https://raw.githubusercontent.com/Comsecuris/gdbghidra/refs/heads/master/data/gdb_ghidra_bridge_client.py \
-        -o /tmp/dist/lib/ghidragdb/gdb_ghidra_bridge_client.py && \
-    sed -i '/from threading import Thread/a import gdb' /tmp/dist/lib/ghidragdb/gdb_ghidra_bridge_client.py
 
 # # Create a README file
 RUN echo 'This directory contains a distribution of the following software:' > /tmp/dist/README.txt && \
@@ -307,22 +383,41 @@ echo.
 echo PYTHONPATH: %PYTHONPATH%
 echo.
 
-"%BASE%gdb-multiarch.exe" --data-directory=%GDB_DATA_DIR% -ex "python import ghidragdb.gdb_ghidra_bridge_client as ggb" %*
+"%BASE%gdb-multiarch.exe" --data-directory=%GDB_DATA_DIR% %*
 EOF
-
 # "
 
 # Create a ZIP archive of the files for distribution
 # cleanup artifact - より確実な削除
+# cleanup artifact - より確実な削除
 RUN rm -rf "/tmp/dist/include" && \
     rm -rf "/tmp/dist/libs" && \
+    rm -rf "/tmp/dist/python313.def" && \
     find /tmp/dist -name "*.a" -type f -delete && \
-    find /tmp/dist -name "*.lib" -type f -delete && \
-    mv /tmp/dist "/tmp/gdb-${GDB_VERSION}-ghidra" && \
+    find /tmp/dist -name "*.lib" -type f -delete
+
+# Create first ZIP with ghidratrace 11.4
+RUN cp -r /tmp/dist "/tmp/gdb-${GDB_VERSION}-ghidra-11.4" && \
     cd /tmp && \
-    zip -r "/tmp/gdb-ghidra.zip" "gdb-${GDB_VERSION}-ghidra"
+    zip -r "/tmp/gdb-ghidra-11.4.zip" "gdb-${GDB_VERSION}-ghidra-11.4"
 
 
+RUN mkdir -p /tmp/dist/lib/ghidragdb
+RUN cp -r /tmp/install/ghidragdb-114/ghidragdb/* /tmp/dist/lib/ghidragdb
+
+# Replace ghidratrace with 11.3 version and create second ZIP
+# Replace ghidragdb and ghidratrace with specific versions and create second ZIP
+RUN rm -rf /tmp/dist/lib/ghidragdb && \
+    mkdir -p /tmp/dist/lib/ghidragdb && \
+    cp -r /tmp/install/ghidragdb-113/ghidragdb/* /tmp/dist/lib/ghidragdb && \
+    rm -rf /tmp/dist/lib/ghidratrace && \
+    mkdir -p /tmp/dist/lib/ghidratrace && \
+    cp -r /tmp/install/ghidratrace-11.3/ghidratrace/* /tmp/dist/lib/ghidratrace && \
+    rm -rf /tmp/dist/licenses/ghidratrace && \
+    mkdir -p /tmp/dist/licenses/ghidratrace && \
+    cp -r /tmp/dist "/tmp/gdb-${GDB_VERSION}-ghidra-11.3" && \
+    cd /tmp && \
+    zip -r "/tmp/gdb-ghidra-11.3.zip" "gdb-${GDB_VERSION}-ghidra-11.3"
 
 
 # docker build -t gdb .

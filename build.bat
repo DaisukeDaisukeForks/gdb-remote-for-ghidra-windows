@@ -26,7 +26,8 @@ if "!CID!"=="" (
 
 :: --- 3. docker cp ---
 echo === Copying artifact ===
-docker cp "!CID!":/tmp/gdb-ghidra.zip ./
+docker cp "!CID!":/tmp/gdb-ghidra-11.4.zip ./
+docker cp "!CID!":/tmp/gdb-ghidra-11.3.zip ./
 if errorlevel 1 (
     echo [ERROR] docker cp に失敗しました。
     docker rm -f "!CID!" >nul 2>nul
